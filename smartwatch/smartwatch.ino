@@ -25,63 +25,75 @@
 #include <Time.h>
 #include <TimeLib.h>
 #include <Timezone.h>
+#include <PulseSensorPlayground.h>
+#include <LSM6DS3.h>
 
+#define USE_ARDUINO_INTERRUPTS true
 #define BLYNK_PRINT Serial
+#define CLEAR_STEP true
+#define NOT_CLEAR_STEP false
 #include <BlynkSimpleEsp8266.h>
 
+// Create PulseSensorPlayground object
+PulseSensorPlayground pulseSensor;
+
+//Create a instance of class LSM6DS3
+LSM6DS3 pedometer(I2C_MODE, 0x6A);  //I2C device address 0x6A
+
+const int PULSE_SENSOR_PIN = 1 const int LED_PIN = 3 const int THRESHOLD = 550;  // Threshold for detecting a heartbeat
 const int DataDisplayButton = 14;
 int RelayButtonPin1 = 12;
 int RelayButtonPin2 = 13;
 
-int Relay1Pin = 2; //Relay pin on the other ESP8266
-int Relay2Pin = 0; //Relay pin on the other ESP8266
+int Relay1Pin = 2;  //Relay pin on the other ESP8266
+int Relay2Pin = 0;  //Relay pin on the other ESP8266
 
-int Relay1State = HIGH;         // the current state of the output pin
-int Relay2State = HIGH;         // the current state of the output pin
+int Relay1State = HIGH;  // the current state of the output pin
+int Relay2State = HIGH;  // the current state of the output pin
 
 String RlSt = String(Relay1State, HEX);
 
-int Relay1ButtonState;             // the current reading from the input pin
-int Relay2ButtonState;             // the current reading from the input pin
+int Relay1ButtonState;  // the current reading from the input pin
+int Relay2ButtonState;  // the current reading from the input pin
 
-int lastButtonState1 = LOW;   // the previous reading from the input pin
-int lastButtonState2 = LOW;   // the previous reading from the input pin
+int lastButtonState1 = LOW;  // the previous reading from the input pin
+int lastButtonState2 = LOW;  // the previous reading from the input pin
 
 // the following variables are unsigned longs because the time, measured in
 // milliseconds, will quickly become a bigger number than can be stored in an int.
 unsigned long lastDebounceTime1 = 0;  // the last time the output pin was toggled
 unsigned long lastDebounceTime2 = 0;  // the last time the output pin was toggled
 
-unsigned long debounceDelay1 = 50;    // the debounce time; increase if the output flickers
-unsigned long debounceDelay2 = 50;    // the debounce time; increase if the output flickers
+unsigned long debounceDelay1 = 50;  // the debounce time; increase if the output flickers
+unsigned long debounceDelay2 = 50;  // the debounce time; increase if the output flickers
 
-char auth[] = "XXXXXXXXXXXXXXXXXXXXXXXXXXX"; //Enter your Authentication Token
+char auth[] = "XXXXXXXXXXXXXXXXXXXXXXXXXXX";  //Enter your Authentication Token
 // Define NTP properties
-#define NTP_OFFSET   60 * 60      // In seconds
-#define NTP_INTERVAL 60 * 1000    // In miliseconds
-#define NTP_ADDRESS  "ir.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
+#define NTP_OFFSET 60 * 60             // In seconds
+#define NTP_INTERVAL 60 * 1000         // In miliseconds
+#define NTP_ADDRESS "ir.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
 
 // Set up the NTP UDP client
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 
 // Create a display object
-SSD1306  display(0x3C, 4, 5); //0x3d for the Adafruit 1.3" OLED, 0x3C being the usual address of the OLED
+SSD1306 display(0x3C, 4, 5);  //0x3d for the Adafruit 1.3" OLED, 0x3C being the usual address of the OLED
 
-const char* ssid = "BYUI_Visitor";   // insert your own ssid
-const char* password = "";              // and password
+const char* ssid = "BYUI_Visitor";  // insert your own ssid
+const char* password = "";          // and password
 String date;
 String t;
 String tempC;
-const char * days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"} ;
-const char * months[] = {"Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec"} ;
-const char * ampm[] = {"AM", "PM"} ;
+const char* days[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec" };
+const char* ampm[] = { "AM", "PM" };
 
 const char hostname[] = "query.yahooapis.com";
-const String url = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; //put the link to Yahoo Weather API here
+const String url = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";  //put the link to Yahoo Weather API here
 const int port = 80;
 
-unsigned long timeout = 10000; //ms
+unsigned long timeout = 10000;  //ms
 
 WiFiClient client;
 
@@ -92,16 +104,38 @@ WidgetBridge bridge1(V1);  // Connect the Relay module
 
 BLYNK_CONNECTED() {
   // Place the AuthToken of the second hardware here
-  bridge1.setAuthToken("XXXXXXXXXXXXXXXXXXXXXXXXXXXXX"); // Enter the Auth token of the relay module(Other Esp8266 Module);
+  bridge1.setAuthToken("XXXXXXXXXXXXXXXXXXXXXXXXXXXXX");  // Enter the Auth token of the relay module(Other Esp8266 Module);
 }
 
-void setup ()
-{
-  Serial.begin(115200); // most ESP-01's use 115200 but this could vary
-  timeClient.begin();   // Start the NTP UDP client
+void setup() {
+  Serial.begin(115200);  // most ESP-01's use 115200 but this could vary
+  timeClient.begin();    // Start the NTP UDP client
 
-  Wire.pins(4, 5);  // Start the OLED with GPIO 4 and 5 on ESP-01
-  Wire.begin(4, 5); // 4=sda, 5=scl
+  pulseSensor.analogInput(PULSE_SENSOR_PIN);
+  pulseSensor.blinkOnPulse(LED_PIN);
+  pulseSensor.setThreshold(THRESHOLD);
+
+  // Check if PulseSensor is initialized
+  if (pulseSensor.begin()) {
+    Serial.println("PulseSensor object created successfully!");
+  }
+
+  while (!Serial)
+    ;
+  if (pedometer.begin() != 0) {
+    Serial.println("Device error");
+  } else {
+    Serial.println("Device OK!");
+  }
+
+  //Configure LSM6DS3 as pedometer
+  if (0 != config_pedometer(NOT_CLEAR_STEP)) {
+    Serial.println("Configure pedometer fail!");
+  }
+  Serial.println("Success to Configure pedometer!");
+
+  Wire.pins(4, 5);   // Start the OLED with GPIO 4 and 5 on ESP-01
+  Wire.begin(4, 5);  // 4=sda, 5=scl
   display.init();
   display.flipScreenVertically();
 
@@ -109,7 +143,6 @@ void setup ()
   // Connect to wifi
   pinMode(DataDisplayButton, INPUT);
 
-  
   Serial.println("");
   display.drawString(0, 0, "Connected to WiFi.");
   Serial.print(WiFi.localIP());
@@ -119,56 +152,109 @@ void setup ()
   delay(1000);
 }
 
-void loop()
-{
+void loop() {
+  // Pedometer
+  uint8_t dataByte = 0;
+  uint16_t stepCount = 0;
+  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
+  stepCount = (dataByte << 8) & 0xFFFF;
+
+  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
+  stepCount |= dataByte;
+
+  Serial.print("Step: ");
+  Serial.println(stepCount);
+
+  //--------------------------------------------------------------------------//
+  // Pulse Reader
+  // Get the current Beats Per Minute (BPM)
+  int currentBPM = pulseSensor.getBeatsPerMinute();
+
+  // Check if a heartbeat is detected
+  if (pulseSensor.sawStartOfBeat()) {
+    Serial.println("♥ A HeartBeat Happened!");
+    Serial.print("BPM: ");
+    Serial.println(currentBPM);
+  }
+
+  //--------------------------------------------------------------------------//
+  // Weather
   int buttonState = digitalRead(DataDisplayButton);
   if (buttonState == LOW) {
     Serial.print("Button pressed");
     GetWeatherData();
     tellTime();
     delay(6000);
-  }
-  else {
+  } else {
     display.clear();
   }
-  
+
   Blynk.run();
   timer.run();
   ControlRelays();
-  
+
   display.display();
 }
 
-void ControlRelays(){
+//Setup pedometer mode
+int config_pedometer(bool clearStep) {
+  uint8_t errorAccumulator = 0;
+  uint8_t dataToWrite = 0;  //Temporary variable
+
+  //Setup the accelerometer******************************
+  dataToWrite = 0;
+
+  //  dataToWrite |= LSM6DS3_ACC_GYRO_BW_XL_200Hz;
+  dataToWrite |= LSM6DS3_ACC_GYRO_FS_XL_2g;
+  dataToWrite |= LSM6DS3_ACC_GYRO_ODR_XL_26Hz;
+
+
+  // Step 1: Configure ODR-26Hz and FS-2g
+  errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, dataToWrite);
+
+  // Step 2: Set bit Zen_G, Yen_G, Xen_G, FUNC_EN, PEDO_RST_STEP(1 or 0)
+  if (clearStep) {
+    errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_CTRL10_C, 0x3E);
+  } else {
+    errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_CTRL10_C, 0x3C);
+  }
+
+  // Step 3:	Enable pedometer algorithm
+  errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x40);
+
+  //Step 4:	Step Detector interrupt driven to INT1 pin, set bit INT1_FIFO_OVR
+  errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_INT1_CTRL, 0x10);
+
+  return errorAccumulator;
+}
+
+void ControlRelays() {
   // read the state of the switch into a local variable:
   int reading1 = digitalRead(RelayButtonPin1);
   int reading2 = digitalRead(RelayButtonPin2);
-   
-  if(reading1 == LOW || reading2 == LOW){ // Tell the state of the Lights
+
+  if (reading1 == LOW || reading2 == LOW) {  // Tell the state of the Lights
     display.drawRect(0, 20, 60, 40);
     display.drawRect(61, 20, 60, 40);
     display.setFont(ArialMT_Plain_10);
     display.drawString(17, 3, "Lights");
-    display.drawString(84, 3, "A/C");        
-    
-    if(Relay1State == HIGH){
-    display.setFont(ArialMT_Plain_16);
-    display.drawString(18, 30, "ON");
+    display.drawString(84, 3, "A/C");
+
+    if (Relay1State == HIGH) {
+      display.setFont(ArialMT_Plain_16);
+      display.drawString(18, 30, "ON");
+    } else if (Relay1State == LOW) {
+      display.setFont(ArialMT_Plain_16);
+      display.drawString(15, 30, "OFF");
     }
-    else if(Relay1State == LOW){
-    display.setFont(ArialMT_Plain_16);
-    display.drawString(15, 30, "OFF");
-    } 
-    if(Relay2State == HIGH){
-    display.setFont(ArialMT_Plain_16);
-    display.drawString(78, 30, "ON");
+    if (Relay2State == HIGH) {
+      display.setFont(ArialMT_Plain_16);
+      display.drawString(78, 30, "ON");
+    } else if (Relay2State == LOW) {
+      display.setFont(ArialMT_Plain_16);
+      display.drawString(76, 30, "OFF");
     }
-    else if(Relay2State == LOW){
-    display.setFont(ArialMT_Plain_16);
-    display.drawString(76, 30, "OFF");
-    }   
-    
-}
+  }
   // check to see if you just pressed the button
   // (i.e. the input went from LOW to HIGH), and you've waited long enough
   // since the last press to ignore any noise:
@@ -221,22 +307,22 @@ void ControlRelays(){
 }
 
 void tellTime() {
-  if (WiFi.status() == WL_CONNECTED) //Check WiFi connection status
+  if (WiFi.status() == WL_CONNECTED)  //Check WiFi connection status
   {
     date = "";  // clear the variables
     t = "";
 
     // update the NTP client and get the UNIX UTC timestamp
     timeClient.update();
-    unsigned long epochTime =  timeClient.getEpochTime();
+    unsigned long epochTime = timeClient.getEpochTime();
 
     // convert received time stamp to time_t object
     time_t local, utc;
     utc = epochTime;
 
     // Then convert the UTC UNIX timestamp to local time
-    TimeChangeRule usEDT = {"EDT", Second, Sun, Mar, 2, +150};  //UTC - 5 hours - change this as needed
-    TimeChangeRule usEST = {"EST", First, Sun, Nov, 2, +150};   //UTC - 6 hours - change this as needed
+    TimeChangeRule usEDT = { "EDT", Second, Sun, Mar, 2, +150 };  //UTC - 5 hours - change this as needed
+    TimeChangeRule usEST = { "EST", First, Sun, Nov, 2, +150 };   //UTC - 6 hours - change this as needed
     Timezone usEastern(usEDT, usEST);
     local = usEastern.toLocal(utc);
 
@@ -252,7 +338,7 @@ void tellTime() {
     // format the time to 12-hour format with AM/PM and no seconds
     t += hourFormat12(local);
     t += ":";
-    if (minute(local) < 10) // add a zero if minute is under 10
+    if (minute(local) < 10)  // add a zero if minute is under 10
       t += "0";
     t += minute(local);
     t += " ";
@@ -270,16 +356,15 @@ void tellTime() {
     display.clear();
     display.setTextAlignment(TEXT_ALIGN_CENTER);
     display.setFont(ArialMT_Plain_24);
-    display.drawStringMaxWidth(64, 14, 128, t); // print time on the display
+    display.drawStringMaxWidth(64, 14, 128, t);  // print time on the display
     display.setFont(ArialMT_Plain_10);
-    display.drawStringMaxWidth(64, 42, 128, date); // print date on the display
-    
-    display.drawString(70, 0, "Temp:"); // prints the Temperature from GetWeatherData() function
-    display.drawString(100, 0, tempC);  // Replace with "temp" to get temperaute in Farenheit
+    display.drawStringMaxWidth(64, 42, 128, date);  // print date on the display
+
+    display.drawString(70, 0, "Temp:");  // prints the Temperature from GetWeatherData() function
+    display.drawString(100, 0, tempC);   // Replace with "temp" to get temperaute in Farenheit
     display.drawString(113, 0, "C");
     display.display();
-  }
-  else // attempt to connect to wifi again if disconnected
+  } else  // attempt to connect to wifi again if disconnected
   {
     display.clear();
     display.drawString(0, 18, "Connecting to Wifi...");
@@ -289,42 +374,39 @@ void tellTime() {
     display.display();
   }
 }
-  void GetWeatherData(){
-  
+void GetWeatherData() {
+
   unsigned long timestamp;
   int temp;
   // Establish TCP connection
   Serial.print("Connecting to ");
   Serial.println(hostname);
-  if ( !client.connect(hostname, port) ) {
+  if (!client.connect(hostname, port)) {
     Serial.println("Connection failed");
   }
 
   // Send GET request
-  String req = "GET " + url + " HTTP/1.1\r\n" + 
-                "Host: " + hostname + "\r\n" +
-                "Connection: close\r\n" +
-                "\r\n";
+  String req = "GET " + url + " HTTP/1.1\r\n" + "Host: " + hostname + "\r\n" + "Connection: close\r\n" + "\r\n";
   client.print(req);
 
   // Wait for response from server
   delay(500);
   timestamp = millis();
-  while ( !client.available() && (millis() < timestamp + timeout) ) {
+  while (!client.available() && (millis() < timestamp + timeout)) {
     delay(1);
   }
 
   // Parse temperature
-  if ( client.find("temp\":") ) {
+  if (client.find("temp\":")) {
     temp = client.parseInt();
-    tempC = (temp - 32) * 5/9 ;
+    tempC = (temp - 32) * 5 / 9;
     Serial.print("Local temperature: ");
     Serial.print(tempC);
     Serial.println("°C");
   }
 
   // Flush receive buffer
-  while ( client.available() ) {
+  while (client.available()) {
     client.readStringUntil('\r');
   }
 
@@ -332,5 +414,4 @@ void tellTime() {
   client.stop();
   Serial.println();
   Serial.println("Connection closed");
-  }
-
+}
