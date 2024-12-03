@@ -5,6 +5,7 @@
 //  SSD1306.h & SSD1306Wire.h:  https://github.com/squix78/esp8266-oled-ssd1306
 //  NTPClient.h: https://github.com/arduino-libraries/NTPClient
 //  ESP8266WiFi.h & WifiUDP.h: https://github.com/ekstrand/ESP8266wifi
+//  PulseSensor Playground: https://github.com/WorldFamousElectronics/PulseSensorPlayground
 
 //  Download latest Blynk library here: https://github.com/blynkkk/blynk-library/releases/latest
 
