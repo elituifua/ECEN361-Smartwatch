@@ -67,8 +67,8 @@ NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 // Create a display object
 SSD1306  display(0x3C, 4, 5); //0x3d for the Adafruit 1.3" OLED, 0x3C being the usual address of the OLED
 
-const char* ssid = "XXXXX";   // insert your own ssid
-const char* password = "XXXXXXXXXXX";              // and password
+const char* ssid = "BYUI_Visitor";   // insert your own ssid
+const char* password = "";              // and password
 String date;
 String t;
 String tempC;
