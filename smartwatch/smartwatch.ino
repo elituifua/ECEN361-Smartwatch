@@ -6,6 +6,7 @@
 //  NTPClient.h: https://github.com/arduino-libraries/NTPClient
 //  ESP8266WiFi.h & WifiUDP.h: https://github.com/ekstrand/ESP8266wifi
 //  PulseSensor Playground: https://github.com/WorldFamousElectronics/PulseSensorPlayground
+//  ESP8266TimerInterrupt: https://github.com/khoih-prog/ESP8266TimerInterrupt
 
 //  Download latest Blynk library here: https://github.com/blynkkk/blynk-library/releases/latest
 
@@ -29,11 +30,14 @@
 #include <BlynkSimpleEsp8266.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <ESP8266_ISR_Timer.hpp>
 
 #define USE_ARDUINO_INTERRUPTS true
 #define BLYNK_PRINT Serial
 #define CLEAR_STEP true
 #define NOT_CLEAR_STEP false
+#define BLYNK_TEMPLATE_ID "TMPL28Z7Rcxq-"
+#define BLYNK_TEMPLATE_NAME "Templatezord"
 
 // Create PulseSensorPlayground object
 PulseSensorPlayground pulseSensor;
@@ -42,9 +46,9 @@ PulseSensorPlayground pulseSensor;
 LSM6DS3 pedometer(I2C_MODE, 0x6A);  //I2C device address 0x6A
 
 const int PULSE_SENSOR_PIN = 1 const int LED_PIN = 3 const int THRESHOLD = 550;  // Threshold for detecting a heartbeat
-const int DataDisplayButton = 14;
-int RelayButtonPin1 = 12;
-int RelayButtonPin2 = 13;
+const int Button1 = 14;
+int Button2 = 12;
+int Button3 = 13;
 
 int Relay1Pin = 2;  //Relay pin on the other ESP8266
 int Relay2Pin = 0;  //Relay pin on the other ESP8266
@@ -151,7 +155,9 @@ void setup() {
 
   Blynk.begin(auth, ssid, password, "blynk-cloud.com", 8080);
   // Connect to wifi
-  pinMode(DataDisplayButton, INPUT);
+  pinMode(Button1, INPUT);
+  pinMode(Button2, INPUT);
+  pinMode(Button3, INPUT);
 
   Serial.println("");
   display.drawString(0, 0, "Connected to WiFi.");
@@ -164,16 +170,19 @@ void setup() {
 
 void loop() {
   // Pedometer
-  DisplayPedometer();
+  if (digitalRead(Button2 == LOW)){
+    DisplayPedometer();
+  }
 
   //--------------------------------------------------------------------------//
   // Pulse Reader
-  DisplayHeartBeat();
+  if (digitalRead(Button3 == LOW)){
+    DisplayHeartBeat();
+  }
 
   //--------------------------------------------------------------------------//
   // Weather
-  int buttonState = digitalRead(DataDisplayButton);
-  if (buttonState == LOW) {
+  if (digitalRead(Button1 == LOW) {
     Serial.print("Button pressed");
     GetWeatherData();
     tellTime();
