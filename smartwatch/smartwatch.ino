@@ -91,7 +91,7 @@ const char* days[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "
 const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec" };
 const char* ampm[] = { "AM", "PM" };
 
-const char hostname[] = "query.yahooapis.com";
+const char hostname[] = "tomorrow.io";
 const String url = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";  //put the link to Yahoo Weather API here
 const int port = 80;
 
