@@ -19,7 +19,6 @@
 #include <WifiUDP.h>
 #include <String.h>
 #include <Wire.h>
-#include <SSD1306.h>
 #include <SSD1306Wire.h>
 #include <NTPClient.h>
 #include <Time.h>
@@ -91,8 +90,15 @@ const char* days[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "
 const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec" };
 const char* ampm[] = { "AM", "PM" };
 
-const char hostname[] = "tomorrow.io";
-const String url = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";  //put the link to Yahoo Weather API here
+const char hostname[] = "api.tomorrow.io";
+const String latitude = "43.825386";
+const String longitude = "-111.792824";
+const String fields = "temperature";
+const String apiKey = "0MCI6ym3qe2E6wXZJqW7g5yqddRehDvA";  // API key
+const String url = "/v4/timelines?location=" + latitude + "," + longitude +
+                   "&fields=" + fields +
+                   "&timesteps=current&units=metric&apikey=" + apiKey;
+
 const int port = 80;
 
 unsigned long timeout = 10000;  //ms
@@ -399,15 +405,55 @@ void tellTime() {
   }
 }
 void GetWeatherData() {
+  const char* apiKey = "0MCI6ym3qe2E6wXZJqW7g5yqddRehDvA";  // Tomorrow.io API Key
+  const String latitude = "43.825386";                        // Latitude
+  const String longitude = "-111.792824";                      // Longitude
+  const String fields = "temperature";
+  const String tomorrowURL = "/v4/timelines?location=" + latitude + "," + longitude +
+                             "&fields=" + fields +
+                             "&timesteps=current&units=metric&apikey=" + apiKey;
 
-  unsigned long timestamp;
-  int temp;
-  // Establish TCP connection
   Serial.print("Connecting to ");
   Serial.println(hostname);
+
   if (!client.connect(hostname, port)) {
     Serial.println("Connection failed");
+    return;
   }
+
+  // Send GET request
+  String request = "GET " + tomorrowURL + " HTTP/1.1\r\n" +
+                   "Host: " + hostname + "\r\n" +
+                   "Connection: close\r\n\r\n";
+  client.print(request);
+
+  // Wait for the response
+  unsigned long timestamp = millis();
+  while (!client.available() && (millis() - timestamp < timeout)) {
+    delay(1);
+  }
+
+  // Read and parse the response
+  String response = "";
+  while (client.available()) {
+    response += client.readString();
+  }
+  client.stop();
+
+  // Find the temperature in the response
+  int tempIndex = response.indexOf("\"temperature\":");
+  if (tempIndex != -1) {
+    int startIndex = response.indexOf(":", tempIndex) + 1;
+    int endIndex = response.indexOf(",", startIndex);
+    tempC = response.substring(startIndex, endIndex);
+    Serial.print("Local temperature: ");
+    Serial.print(tempC);
+    Serial.println("°C");
+  } else {
+    Serial.println("Temperature data not found in the response");
+  }
+}
+
 
   // Send GET request
   String req = "GET " + url + " HTTP/1.1\r\n" + "Host: " + hostname + "\r\n" + "Connection: close\r\n" + "\r\n";
