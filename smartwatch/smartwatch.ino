@@ -147,7 +147,7 @@ void setup() {
   display.drawString(0, 0, "Connected to WiFi.");
   Serial.print(WiFi.localIP());
   Serial.println("");
-  display.drawString(0, 24, "Hi Shyam!");
+  display.drawString(0, 24, "Welcome!");
   display.display();
   delay(1000);
 }
