@@ -27,12 +27,14 @@
 #include <Timezone.h>
 #include <PulseSensorPlayground.h>
 #include <LSM6DS3.h>
+#include <BlynkSimpleEsp8266.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 #define USE_ARDUINO_INTERRUPTS true
 #define BLYNK_PRINT Serial
 #define CLEAR_STEP true
 #define NOT_CLEAR_STEP false
-#include <BlynkSimpleEsp8266.h>
 
 // Create PulseSensorPlayground object
 PulseSensorPlayground pulseSensor;
@@ -132,7 +134,9 @@ void setup() {
   if (0 != config_pedometer(NOT_CLEAR_STEP)) {
     Serial.println("Configure pedometer fail!");
   }
-  Serial.println("Success to Configure pedometer!");
+  else {
+    Serial.println("Success to Configure pedometer!");
+  }
 
   Wire.pins(4, 5);   // Start the OLED with GPIO 4 and 5 on ESP-01
   Wire.begin(4, 5);  // 4=sda, 5=scl
@@ -154,28 +158,11 @@ void setup() {
 
 void loop() {
   // Pedometer
-  uint8_t dataByte = 0;
-  uint16_t stepCount = 0;
-  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
-  stepCount = (dataByte << 8) & 0xFFFF;
-
-  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
-  stepCount |= dataByte;
-
-  Serial.print("Step: ");
-  Serial.println(stepCount);
+  DisplayPedometer();
 
   //--------------------------------------------------------------------------//
   // Pulse Reader
-  // Get the current Beats Per Minute (BPM)
-  int currentBPM = pulseSensor.getBeatsPerMinute();
-
-  // Check if a heartbeat is detected
-  if (pulseSensor.sawStartOfBeat()) {
-    Serial.println("♥ A HeartBeat Happened!");
-    Serial.print("BPM: ");
-    Serial.println(currentBPM);
-  }
+  DisplayHeartBeat();
 
   //--------------------------------------------------------------------------//
   // Weather
@@ -226,6 +213,43 @@ int config_pedometer(bool clearStep) {
   errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_INT1_CTRL, 0x10);
 
   return errorAccumulator;
+}
+
+void DisplayHeartBeat() {
+  display.clear();
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.setFont(ArialMT_Plain_24);
+
+  int currentBPM = pulseSensor.getBeatsPerMinute();
+
+  // Check if a heartbeat is detected
+  if (pulseSensor.sawStartOfBeat()) {
+    Serial.println("♥ A HeartBeat Happened!");
+    Serial.print("BPM: ");
+    Serial.println(currentBPM);
+
+    display.drawString(0, 0, "BPM: " + String(currentBPM));
+  }
+
+  else {
+    display.drawString(0, 0, "Could not read heart beat");  // if sensor fails
+    display.display(); 
+  }
+}
+
+void DisplayPedometer() {
+  uint8_t dataByte = 0;
+  uint16_t stepCount = 0;
+  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
+  stepCount = (dataByte << 8) & 0xFFFF;
+
+  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
+  stepCount |= dataByte;
+
+  Serial.print("Step: ");
+  Serial.println(stepCount);
+
+  display.drawString(0, 0, "Current Steps: " + String(stepCount));
 }
 
 void ControlRelays() {
