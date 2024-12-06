@@ -6,6 +6,7 @@
 //  NTPClient.h: https://github.com/arduino-libraries/NTPClient
 //  ESP8266WiFi.h & WifiUDP.h: https://github.com/ekstrand/ESP8266wifi
 //  PulseSensor Playground: https://github.com/WorldFamousElectronics/PulseSensorPlayground
+//  ESP8266TimerInterrupt: https://github.com/khoih-prog/ESP8266TimerInterrupt
 
 //  Download latest Blynk library here: https://github.com/blynkkk/blynk-library/releases/latest
 
@@ -19,7 +20,6 @@
 #include <WifiUDP.h>
 #include <String.h>
 #include <Wire.h>
-#include <SSD1306.h>
 #include <SSD1306Wire.h>
 #include <NTPClient.h>
 #include <Time.h>
@@ -27,12 +27,17 @@
 #include <Timezone.h>
 #include <PulseSensorPlayground.h>
 #include <LSM6DS3.h>
+#include <BlynkSimpleEsp8266.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <ESP8266_ISR_Timer.hpp>
 
 #define USE_ARDUINO_INTERRUPTS true
 #define BLYNK_PRINT Serial
 #define CLEAR_STEP true
 #define NOT_CLEAR_STEP false
-#include <BlynkSimpleEsp8266.h>
+#define BLYNK_TEMPLATE_ID "TMPL28Z7Rcxq-"
+#define BLYNK_TEMPLATE_NAME "Templatezord"
 
 // Create PulseSensorPlayground object
 PulseSensorPlayground pulseSensor;
@@ -41,9 +46,9 @@ PulseSensorPlayground pulseSensor;
 LSM6DS3 pedometer(I2C_MODE, 0x6A);  //I2C device address 0x6A
 
 const int PULSE_SENSOR_PIN = 1 const int LED_PIN = 3 const int THRESHOLD = 550;  // Threshold for detecting a heartbeat
-const int DataDisplayButton = 14;
-int RelayButtonPin1 = 12;
-int RelayButtonPin2 = 13;
+const int Button1 = 14;
+int Button2 = 12;
+int Button3 = 13;
 
 int Relay1Pin = 2;  //Relay pin on the other ESP8266
 int Relay2Pin = 0;  //Relay pin on the other ESP8266
@@ -89,8 +94,15 @@ const char* days[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "
 const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec" };
 const char* ampm[] = { "AM", "PM" };
 
-const char hostname[] = "query.yahooapis.com";
-const String url = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";  //put the link to Yahoo Weather API here
+const char hostname[] = "api.tomorrow.io";
+const String latitude = "43.825386";
+const String longitude = "-111.792824";
+const String fields = "temperature";
+const String apiKey = "0MCI6ym3qe2E6wXZJqW7g5yqddRehDvA";  // API key
+const String url = "/v4/timelines?location=" + latitude + "," + longitude +
+                   "&fields=" + fields +
+                   "&timesteps=current&units=metric&apikey=" + apiKey;
+
 const int port = 80;
 
 unsigned long timeout = 10000;  //ms
@@ -132,7 +144,9 @@ void setup() {
   if (0 != config_pedometer(NOT_CLEAR_STEP)) {
     Serial.println("Configure pedometer fail!");
   }
-  Serial.println("Success to Configure pedometer!");
+  else {
+    Serial.println("Success to Configure pedometer!");
+  }
 
   Wire.pins(4, 5);   // Start the OLED with GPIO 4 and 5 on ESP-01
   Wire.begin(4, 5);  // 4=sda, 5=scl
@@ -141,7 +155,9 @@ void setup() {
 
   Blynk.begin(auth, ssid, password, "blynk-cloud.com", 8080);
   // Connect to wifi
-  pinMode(DataDisplayButton, INPUT);
+  pinMode(Button1, INPUT);
+  pinMode(Button2, INPUT);
+  pinMode(Button3, INPUT);
 
   Serial.println("");
   display.drawString(0, 0, "Connected to WiFi.");
@@ -154,33 +170,19 @@ void setup() {
 
 void loop() {
   // Pedometer
-  uint8_t dataByte = 0;
-  uint16_t stepCount = 0;
-  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
-  stepCount = (dataByte << 8) & 0xFFFF;
-
-  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
-  stepCount |= dataByte;
-
-  Serial.print("Step: ");
-  Serial.println(stepCount);
+  if (digitalRead(Button2 == LOW)){
+    DisplayPedometer();
+  }
 
   //--------------------------------------------------------------------------//
   // Pulse Reader
-  // Get the current Beats Per Minute (BPM)
-  int currentBPM = pulseSensor.getBeatsPerMinute();
-
-  // Check if a heartbeat is detected
-  if (pulseSensor.sawStartOfBeat()) {
-    Serial.println("♥ A HeartBeat Happened!");
-    Serial.print("BPM: ");
-    Serial.println(currentBPM);
+  if (digitalRead(Button3 == LOW)){
+    DisplayHeartBeat();
   }
 
   //--------------------------------------------------------------------------//
   // Weather
-  int buttonState = digitalRead(DataDisplayButton);
-  if (buttonState == LOW) {
+  if (digitalRead(Button1 == LOW) {
     Serial.print("Button pressed");
     GetWeatherData();
     tellTime();
@@ -226,6 +228,43 @@ int config_pedometer(bool clearStep) {
   errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_INT1_CTRL, 0x10);
 
   return errorAccumulator;
+}
+
+void DisplayHeartBeat() {
+  display.clear();
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.setFont(ArialMT_Plain_24);
+
+  int currentBPM = pulseSensor.getBeatsPerMinute();
+
+  // Check if a heartbeat is detected
+  if (pulseSensor.sawStartOfBeat()) {
+    Serial.println("♥ A HeartBeat Happened!");
+    Serial.print("BPM: ");
+    Serial.println(currentBPM);
+
+    display.drawString(0, 0, "BPM: " + String(currentBPM));
+  }
+
+  else {
+    display.drawString(0, 0, "Could not read heart beat");  // if sensor fails
+    display.display(); 
+  }
+}
+
+void DisplayPedometer() {
+  uint8_t dataByte = 0;
+  uint16_t stepCount = 0;
+  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
+  stepCount = (dataByte << 8) & 0xFFFF;
+
+  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
+  stepCount |= dataByte;
+
+  Serial.print("Step: ");
+  Serial.println(stepCount);
+
+  display.drawString(0, 0, "Current Steps: " + String(stepCount));
 }
 
 void ControlRelays() {
@@ -375,15 +414,55 @@ void tellTime() {
   }
 }
 void GetWeatherData() {
+  const char* apiKey = "0MCI6ym3qe2E6wXZJqW7g5yqddRehDvA";  // Tomorrow.io API Key
+  const String latitude = "43.825386";                        // Latitude
+  const String longitude = "-111.792824";                      // Longitude
+  const String fields = "temperature";
+  const String tomorrowURL = "/v4/timelines?location=" + latitude + "," + longitude +
+                             "&fields=" + fields +
+                             "&timesteps=current&units=metric&apikey=" + apiKey;
 
-  unsigned long timestamp;
-  int temp;
-  // Establish TCP connection
   Serial.print("Connecting to ");
   Serial.println(hostname);
+
   if (!client.connect(hostname, port)) {
     Serial.println("Connection failed");
+    return;
   }
+
+  // Send GET request
+  String request = "GET " + tomorrowURL + " HTTP/1.1\r\n" +
+                   "Host: " + hostname + "\r\n" +
+                   "Connection: close\r\n\r\n";
+  client.print(request);
+
+  // Wait for the response
+  unsigned long timestamp = millis();
+  while (!client.available() && (millis() - timestamp < timeout)) {
+    delay(1);
+  }
+
+  // Read and parse the response
+  String response = "";
+  while (client.available()) {
+    response += client.readString();
+  }
+  client.stop();
+
+  // Find the temperature in the response
+  int tempIndex = response.indexOf("\"temperature\":");
+  if (tempIndex != -1) {
+    int startIndex = response.indexOf(":", tempIndex) + 1;
+    int endIndex = response.indexOf(",", startIndex);
+    tempC = response.substring(startIndex, endIndex);
+    Serial.print("Local temperature: ");
+    Serial.print(tempC);
+    Serial.println("°C");
+  } else {
+    Serial.println("Temperature data not found in the response");
+  }
+}
+
 
   // Send GET request
   String req = "GET " + url + " HTTP/1.1\r\n" + "Host: " + hostname + "\r\n" + "Connection: close\r\n" + "\r\n";
