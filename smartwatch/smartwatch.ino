@@ -7,7 +7,6 @@
 //  ESP8266WiFi.h & WifiUDP.h: https://github.com/ekstrand/ESP8266wifi
 //  PulseSensor Playground: https://github.com/WorldFamousElectronics/PulseSensorPlayground
 //  ESP8266TimerInterrupt: https://github.com/khoih-prog/ESP8266TimerInterrupt
-
 //  Download latest Blynk library here: https://github.com/blynkkk/blynk-library/releases/latest
 
 // 128x64 OLED pinout:
@@ -26,11 +25,13 @@
 #include <TimeLib.h>
 #include <Timezone.h>
 #include <PulseSensorPlayground.h>
-#include <LSM6DS3.h>
 #include <BlynkSimpleEsp8266.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ESP8266_ISR_Timer.hpp>
+#include <SSD1306I2C.h>
+#include <SPI.h>
+#include <SparkFunLSM6DS3.h>
 
 #define USE_ARDUINO_INTERRUPTS true
 #define BLYNK_PRINT Serial
@@ -43,9 +44,11 @@
 PulseSensorPlayground pulseSensor;
 
 //Create a instance of class LSM6DS3
-LSM6DS3 pedometer(I2C_MODE, 0x6A);  //I2C device address 0x6A
+LSM6DS3Core myIMU(I2C_MODE, 0x6B);
 
-const int PULSE_SENSOR_PIN = 1 const int LED_PIN = 3 const int THRESHOLD = 550;  // Threshold for detecting a heartbeat
+const int PULSE_SENSOR_PIN = 1;
+const int LED_PIN = 3;
+const int THRESHOLD = 550;  // Threshold for detecting a heartbeat
 const int Button1 = 14;
 int Button2 = 12;
 int Button3 = 13;
@@ -83,13 +86,14 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 
 // Create a display object
-SSD1306 display(0x3C, 4, 5);  //0x3d for the Adafruit 1.3" OLED, 0x3C being the usual address of the OLED
+SSD1306Wire display(0x3C, 4, 5);  //0x3d for the Adafruit 1.3" OLED, 0x3C being the usual address of the OLED
 
 const char* ssid = "BYUI_Visitor";  // insert your own ssid
 const char* password = "";          // and password
 String date;
 String t;
 String tempC;
+int temp;
 const char* days[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec" };
 const char* ampm[] = { "AM", "PM" };
@@ -99,9 +103,7 @@ const String latitude = "43.825386";
 const String longitude = "-111.792824";
 const String fields = "temperature";
 const String apiKey = "0MCI6ym3qe2E6wXZJqW7g5yqddRehDvA";  // API key
-const String url = "/v4/timelines?location=" + latitude + "," + longitude +
-                   "&fields=" + fields +
-                   "&timesteps=current&units=metric&apikey=" + apiKey;
+const String url = "/v4/timelines?location=" + latitude + "," + longitude + "&fields=" + fields + "&timesteps=current&units=metric&apikey=" + apiKey;
 
 const int port = 80;
 
@@ -132,21 +134,8 @@ void setup() {
     Serial.println("PulseSensor object created successfully!");
   }
 
-  while (!Serial)
-    ;
-  if (pedometer.begin() != 0) {
-    Serial.println("Device error");
-  } else {
-    Serial.println("Device OK!");
-  }
-
-  //Configure LSM6DS3 as pedometer
-  if (0 != config_pedometer(NOT_CLEAR_STEP)) {
-    Serial.println("Configure pedometer fail!");
-  }
-  else {
-    Serial.println("Success to Configure pedometer!");
-  }
+  // Pedometer Setup
+  SetupPedometer();
 
   Wire.pins(4, 5);   // Start the OLED with GPIO 4 and 5 on ESP-01
   Wire.begin(4, 5);  // 4=sda, 5=scl
@@ -170,19 +159,19 @@ void setup() {
 
 void loop() {
   // Pedometer
-  if (digitalRead(Button2 == LOW)){
+  if (digitalRead(Button2 == LOW)) {
     DisplayPedometer();
   }
 
   //--------------------------------------------------------------------------//
   // Pulse Reader
-  if (digitalRead(Button3 == LOW)){
+  if (digitalRead(Button3 == LOW)) {
     DisplayHeartBeat();
   }
 
   //--------------------------------------------------------------------------//
   // Weather
-  if (digitalRead(Button1 == LOW) {
+  if (digitalRead(Button1 == LOW)) {
     Serial.print("Button pressed");
     GetWeatherData();
     tellTime();
@@ -198,37 +187,68 @@ void loop() {
   display.display();
 }
 
-//Setup pedometer mode
-int config_pedometer(bool clearStep) {
+//Setup pedometer
+void SetupPedometer() {
+  //Call .beginCore() to configure the IMU
+  if (myIMU.beginCore() != 0) {
+    Serial.print("Error at beginCore().\n");
+  } else {
+    Serial.print("\nbeginCore() passed.\n");
+  }
+
+  //Error accumulation variable
   uint8_t errorAccumulator = 0;
+
   uint8_t dataToWrite = 0;  //Temporary variable
 
   //Setup the accelerometer******************************
-  dataToWrite = 0;
-
+  dataToWrite = 0;  //Start Fresh!
   //  dataToWrite |= LSM6DS3_ACC_GYRO_BW_XL_200Hz;
   dataToWrite |= LSM6DS3_ACC_GYRO_FS_XL_2g;
   dataToWrite |= LSM6DS3_ACC_GYRO_ODR_XL_26Hz;
 
+  // //Now, write the patched together data
+  errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, dataToWrite);
 
-  // Step 1: Configure ODR-26Hz and FS-2g
-  errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, dataToWrite);
+  //Set the ODR bit
+  errorAccumulator += myIMU.readRegister(&dataToWrite, LSM6DS3_ACC_GYRO_CTRL4_C);
+  dataToWrite &= ~((uint8_t)LSM6DS3_ACC_GYRO_BW_SCAL_ODR_ENABLED);
 
-  // Step 2: Set bit Zen_G, Yen_G, Xen_G, FUNC_EN, PEDO_RST_STEP(1 or 0)
-  if (clearStep) {
-    errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_CTRL10_C, 0x3E);
+
+  // Enable embedded functions -- ALSO clears the pdeo step count
+  errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL10_C, 0x3E);
+  // Enable pedometer algorithm
+  errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x40);
+  // Step Detector interrupt driven to INT1 pin
+  errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT1_CTRL, 0x10);
+
+  if (errorAccumulator) {
+    Serial.println("Problem configuring the device.");
   } else {
-    errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_CTRL10_C, 0x3C);
+    Serial.println("Device O.K.");
   }
-
-  // Step 3:	Enable pedometer algorithm
-  errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x40);
-
-  //Step 4:	Step Detector interrupt driven to INT1 pin, set bit INT1_FIFO_OVR
-  errorAccumulator += pedometer.writeRegister(LSM6DS3_ACC_GYRO_INT1_CTRL, 0x10);
-
-  return errorAccumulator;
+  delay(200);
 }
+
+
+// Display Pedometer
+void DisplayPedometer() {
+  uint8_t readDataByte = 0;
+  uint16_t stepsTaken = 0;
+  //Read the 16bit value by two 8bit operations
+  myIMU.readRegister(&readDataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
+  stepsTaken = ((uint16_t)readDataByte) << 8;
+
+  myIMU.readRegister(&readDataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
+  stepsTaken |= readDataByte;
+
+  //Display steps taken
+  Serial.print("Steps taken: ");
+  Serial.println(stepsTaken);
+
+  display.drawString(0, 0, "Current Steps: " + String(stepsTaken));
+}
+
 
 void DisplayHeartBeat() {
   display.clear();
@@ -248,29 +268,15 @@ void DisplayHeartBeat() {
 
   else {
     display.drawString(0, 0, "Could not read heart beat");  // if sensor fails
-    display.display(); 
+    display.display();
   }
 }
 
-void DisplayPedometer() {
-  uint8_t dataByte = 0;
-  uint16_t stepCount = 0;
-  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
-  stepCount = (dataByte << 8) & 0xFFFF;
-
-  pedometer.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
-  stepCount |= dataByte;
-
-  Serial.print("Step: ");
-  Serial.println(stepCount);
-
-  display.drawString(0, 0, "Current Steps: " + String(stepCount));
-}
 
 void ControlRelays() {
   // read the state of the switch into a local variable:
-  int reading1 = digitalRead(RelayButtonPin1);
-  int reading2 = digitalRead(RelayButtonPin2);
+  int reading1 = digitalRead(Relay1ButtonState);
+  int reading2 = digitalRead(Relay2ButtonState);
 
   if (reading1 == LOW || reading2 == LOW) {  // Tell the state of the Lights
     display.drawRect(0, 20, 60, 40);
@@ -345,6 +351,7 @@ void ControlRelays() {
   lastButtonState2 = reading2;
 }
 
+
 void tellTime() {
   if (WiFi.status() == WL_CONNECTED)  //Check WiFi connection status
   {
@@ -415,12 +422,10 @@ void tellTime() {
 }
 void GetWeatherData() {
   const char* apiKey = "0MCI6ym3qe2E6wXZJqW7g5yqddRehDvA";  // Tomorrow.io API Key
-  const String latitude = "43.825386";                        // Latitude
-  const String longitude = "-111.792824";                      // Longitude
+  const String latitude = "43.825386";                      // Latitude
+  const String longitude = "-111.792824";                   // Longitude
   const String fields = "temperature";
-  const String tomorrowURL = "/v4/timelines?location=" + latitude + "," + longitude +
-                             "&fields=" + fields +
-                             "&timesteps=current&units=metric&apikey=" + apiKey;
+  const String tomorrowURL = "/v4/timelines?location=" + latitude + "," + longitude + "&fields=" + fields + "&timesteps=current&units=metric&apikey=" + apiKey;
 
   Serial.print("Connecting to ");
   Serial.println(hostname);
@@ -431,9 +436,7 @@ void GetWeatherData() {
   }
 
   // Send GET request
-  String request = "GET " + tomorrowURL + " HTTP/1.1\r\n" +
-                   "Host: " + hostname + "\r\n" +
-                   "Connection: close\r\n\r\n";
+  String request = "GET " + tomorrowURL + " HTTP/1.1\r\n" + "Host: " + hostname + "\r\n" + "Connection: close\r\n\r\n";
   client.print(request);
 
   // Wait for the response
@@ -461,7 +464,6 @@ void GetWeatherData() {
   } else {
     Serial.println("Temperature data not found in the response");
   }
-}
 
 
   // Send GET request
