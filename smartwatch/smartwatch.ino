@@ -3,6 +3,7 @@
 // Vin goes to 3.3V
 // Data to I2C SDA (GPIO 4)
 // Clk to I2C SCL (GPIO 5)
+// 7, 8, 9, 10, 6, 11
 
 #include <ESP8266WiFi.h>
 #include <WifiUDP.h>
@@ -27,8 +28,8 @@ PulseSensorPlayground pulseSensor;
 //Create a instance of class LSM6DS3
 LSM6DS3Core myIMU(I2C_MODE, 0x6B);
 
-const int PULSE_SENSOR_PIN = 1;
-const int LED_PIN = 3;
+const int PULSE_SENSOR_PIN = 7;
+const int LED_PIN = 8;
 const int THRESHOLD = 550;  // Threshold for detecting a heartbeat
 
 // Define pins for buttons
@@ -135,10 +136,14 @@ void setup() {
   // Pedometer Setup
   SetupPedometer();
 
-  Wire.pins(4, 5);   // Start the OLED with GPIO 4 and 5 on ESP-01
+  // Initialize OLED with default pins for ESP-01 (GPIO 4 and 5)
   Wire.begin(4, 5);  // 4=sda, 5=scl
   display.init();
   display.flipScreenVertically();
+
+  // Now configure I2C for the accelerometer (GPIO 12 and 14)
+  Wire.pins(12, 14);   // Assign GPIO 12 and 14 for I2C communication
+  Wire.begin();        // Re-initialize I2C with new pins for the accelerometer
 
   // Connect to wifi
   Blynk.begin(auth, ssid, password, "blynk-cloud.com", 8080);
