@@ -142,7 +142,7 @@ void setup() {
   display.flipScreenVertically();
 
   // Now configure I2C for the accelerometer (GPIO 12 and 14)
-  Wire.pins(12, 14);   // Assign GPIO 12 and 14 for I2C communication
+  Wire.pins(9, 10);   // Assign GPIO 9 and 10 for I2C communication
   Wire.begin();        // Re-initialize I2C with new pins for the accelerometer
 
   // Connect to wifi
