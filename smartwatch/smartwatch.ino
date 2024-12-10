@@ -8,12 +8,10 @@
 #include <WifiUDP.h>
 #include <SSD1306Wire.h>
 #include <NTPClient.h>
-#include <Time.h>
 #include <TimeLib.h>
 #include <Timezone.h>
 #include <PulseSensorPlayground.h>
 #include <BlynkSimpleEsp8266.h>
-#include <SSD1306I2C.h>
 #include <SparkFunLSM6DS3.h>
 
 #define USE_ARDUINO_INTERRUPTS true
@@ -53,7 +51,6 @@ int relay3ButtonState = HIGH;  // Current state of Relay 3 button
 bool relay1State = false;  // Current state of Relay 1
 bool relay2State = false;  // Current state of Relay 2
 bool relay3State = false;  // Current state of Relay 3
-
 
 // the following variables are unsigned longs because the time, measured in
 // milliseconds, will quickly become a bigger number than can be stored in an int.
@@ -107,6 +104,7 @@ BLYNK_CONNECTED() {
   bridge1.setAuthToken("XXXXXXXXXXXXXXXXXXXXXXXXXXXXX");  // Enter the Auth token of the relay module(Other Esp8266 Module);
 }
 
+
 void setup() {
   Serial.begin(115200);  // most ESP-01's use 115200 but this could vary
   timeClient.begin();    // Start the NTP UDP client
@@ -151,6 +149,7 @@ void setup() {
   display.display();
   delay(1000);
 }
+
 
 void loop() {
   // Debounce variables for each button
@@ -202,6 +201,7 @@ void loop() {
   display.display();
 }
 
+
 bool debounceButton(int buttonPin, int& lastButtonState, unsigned long& lastDebounceTime) {
   int currentButtonState = digitalRead(buttonPin);
 
@@ -218,7 +218,7 @@ bool debounceButton(int buttonPin, int& lastButtonState, unsigned long& lastDebo
   return false;                          // No button press detected
 }
 
-//Setup pedometer
+
 void SetupPedometer() {
   if (myIMU.beginCore() != 0) {
     Serial.print("Error at beginCore().\n");
@@ -261,7 +261,6 @@ void SetupPedometer() {
 }
 
 
-// Display Pedometer
 void DisplayPedometer() {
   uint8_t readDataByte = 0;
   uint16_t stepsTaken = 0;
@@ -504,6 +503,15 @@ void GetWeatherData() {
     delay(1);
   }
 
+  if (!client.available()) {
+    Serial.println("Timeout or no data received");
+    display.clear();
+    display.drawString(0, 32, "Timeout or no data");
+    display.display();
+    client.stop();
+    return;
+  }
+
   // Read and parse the response
   String response = "";
   while (client.available()) {
@@ -511,47 +519,32 @@ void GetWeatherData() {
   }
   client.stop();
 
-  // Find the temperature in the response
   int tempIndex = response.indexOf("\"temperature\":");
-  if (tempIndex != -1) {
-    int startIndex = response.indexOf(":", tempIndex) + 1;
-    int endIndex = response.indexOf(",", startIndex);
-    tempC = response.substring(startIndex, endIndex);
-    Serial.print("Local temperature: ");
-    Serial.print(tempC);
-    Serial.println("°C");
-  } else {
-    Serial.println("Temperature data not found in the response");
+  if (tempIndex == -1) {
+    Serial.println("Temperature data not found");
+    display.clear();
+    display.drawString(0, 32, "No Temp Data");
+    display.display();
+    return;
   }
 
+  // Extract temperature value (assuming it's in Celsius in the response)
+  int tempStartIndex = response.indexOf(":", tempIndex) + 1;
+  int tempEndIndex = response.indexOf(",", tempStartIndex);
 
-  // Send GET request
-  String req = "GET " + url + " HTTP/1.1\r\n" + "Host: " + hostname + "\r\n" + "Connection: close\r\n" + "\r\n";
-  client.print(req);
-
-  // Wait for response from server
-  delay(500);
-  timestamp = millis();
-  while (!client.available() && (millis() < timestamp + timeout)) {
-    delay(1);
+  if (tempEndIndex == -1) {
+    tempEndIndex = response.indexOf("}", tempStartIndex);
   }
 
-  // Parse temperature
-  if (client.find("temp\":")) {
-    temp = client.parseInt();
-    tempC = (temp - 32) * 5 / 9;
-    Serial.print("Local temperature: ");
-    Serial.print(tempC);
-    Serial.println("°C");
-  }
+  String tempStr = response.substring(tempStartIndex, tempEndIndex);
+  tempC = tempStr;  // Store temperature for later use
 
-  // Flush receive buffer
-  while (client.available()) {
-    client.readStringUntil('\r');
-  }
+  Serial.print("Current Temperature: ");
+  Serial.println(tempStr);
 
-  // Close TCP connection
-  client.stop();
-  Serial.println();
-  Serial.println("Connection closed");
+  // Display temperature on OLED screen
+  display.clear();
+  display.drawString(0, 0, "Weather Data:");
+  display.drawString(0, 24, "Temp: " + tempC + "C");
+  display.display();
 }
