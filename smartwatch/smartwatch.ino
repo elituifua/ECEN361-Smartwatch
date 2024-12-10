@@ -301,8 +301,6 @@ void ControlRelays() {
     }
   }
   // check to see if you just pressed the button
-  // (i.e. the input went from LOW to HIGH), and you've waited long enough
-  // since the last press to ignore any noise:
 
   // If the switch changed, due to noise or pressing:
   if (reading1 != lastButtonState1) {
@@ -313,7 +311,6 @@ void ControlRelays() {
     // reset the debouncing timer
     lastDebounceTime2 = millis();
   }
-
 
   if ((millis() - lastDebounceTime1) > debounceDelay1) {
     // whatever the reading is at, it's been there for longer than the debounce
@@ -367,10 +364,10 @@ void tellTime() {
     utc = epochTime;
 
     // Then convert the UTC UNIX timestamp to local time
-    TimeChangeRule usEDT = { "EDT", Second, Sun, Mar, 2, +150 };  //UTC - 5 hours - change this as needed
-    TimeChangeRule usEST = { "EST", First, Sun, Nov, 2, +150 };   //UTC - 6 hours - change this as needed
-    Timezone usEastern(usEDT, usEST);
-    local = usEastern.toLocal(utc);
+    TimeChangeRule usMDT = { "MDT", Second, Sun, Mar, 2, -360 };  // UTC-6 hours
+    TimeChangeRule usMST = { "MST", First, Sun, Nov, 2, -420 };  // UTC-7 hours
+    Timezone usMountain(usMDT, usMST);
+    local = usMountain.toLocal(utc);
 
     // now format the Time variables into strings with proper names for month, day etc
     date += days[weekday(local) - 1];
