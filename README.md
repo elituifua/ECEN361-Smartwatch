@@ -1,2 +1,2 @@
-# ECEN361-Smartwatch
-code for the smartwatch
+### Smart Watch
+# Brigham Young University Idaho
