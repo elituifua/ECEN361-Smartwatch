@@ -1,14 +1,3 @@
-//  ESP8266_SmartWatch.ino
-//  Libraries needed:
-//  Time.h & TimeLib.h:  https://github.com/PaulStoffregen/Time
-//  Timezone.h: https://github.com/JChristensen/Timezone
-//  SSD1306.h & SSD1306Wire.h:  https://github.com/squix78/esp8266-oled-ssd1306
-//  NTPClient.h: https://github.com/arduino-libraries/NTPClient
-//  ESP8266WiFi.h & WifiUDP.h: https://github.com/ekstrand/ESP8266wifi
-//  PulseSensor Playground: https://github.com/WorldFamousElectronics/PulseSensorPlayground
-//  ESP8266TimerInterrupt: https://github.com/khoih-prog/ESP8266TimerInterrupt
-//  Download latest Blynk library here: https://github.com/blynkkk/blynk-library/releases/latest
-
 // 128x64 OLED pinout:
 // GND goes to ground
 // Vin goes to 3.3V
@@ -17,8 +6,6 @@
 
 #include <ESP8266WiFi.h>
 #include <WifiUDP.h>
-#include <String.h>
-#include <Wire.h>
 #include <SSD1306Wire.h>
 #include <NTPClient.h>
 #include <Time.h>
@@ -26,11 +13,7 @@
 #include <Timezone.h>
 #include <PulseSensorPlayground.h>
 #include <BlynkSimpleEsp8266.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <ESP8266_ISR_Timer.hpp>
 #include <SSD1306I2C.h>
-#include <SPI.h>
 #include <SparkFunLSM6DS3.h>
 
 #define USE_ARDUINO_INTERRUPTS true
@@ -49,31 +32,34 @@ LSM6DS3Core myIMU(I2C_MODE, 0x6B);
 const int PULSE_SENSOR_PIN = 1;
 const int LED_PIN = 3;
 const int THRESHOLD = 550;  // Threshold for detecting a heartbeat
-const int Button1 = 14;
-int Button2 = 12;
-int Button3 = 13;
 
-int Relay1Pin = 2;  //Relay pin on the other ESP8266
-int Relay2Pin = 0;  //Relay pin on the other ESP8266
+// Define pins for buttons
+const int button1Pin = 14;  // Button 1: Weather
+const int button2Pin = 12;  // Button 2: Pedometer
+const int button3Pin = 13;  // Button 3: Pulse reader
 
-int Relay1State = HIGH;  // the current state of the output pin
-int Relay2State = HIGH;  // the current state of the output pin
+// Variables to track state
+int currentMode = 0;  // 0 = Time, 1 = Weather, 2 = Pedometer, 3 = Pulse reader
 
-String RlSt = String(Relay1State, HEX);
+const int relay1Pin = 5;   // Relay 1 pin
+const int relay2Pin = 4;   // Relay 2 pin
+const int relay3Pin = 16;  // Relay 3 pin
 
-int Relay1ButtonState;  // the current reading from the input pin
-int Relay2ButtonState;  // the current reading from the input pin
+// Variables to store button states and debounce timers
+int relay1ButtonState = HIGH;  // Current state of Relay 1 button
+int relay2ButtonState = HIGH;  // Current state of Relay 2 button
+int relay3ButtonState = HIGH;  // Current state of Relay 3 button
 
-int lastButtonState1 = LOW;  // the previous reading from the input pin
-int lastButtonState2 = LOW;  // the previous reading from the input pin
+bool relay1State = false;  // Current state of Relay 1
+bool relay2State = false;  // Current state of Relay 2
+bool relay3State = false;  // Current state of Relay 3
+
 
 // the following variables are unsigned longs because the time, measured in
 // milliseconds, will quickly become a bigger number than can be stored in an int.
-unsigned long lastDebounceTime1 = 0;  // the last time the output pin was toggled
-unsigned long lastDebounceTime2 = 0;  // the last time the output pin was toggled
-
-unsigned long debounceDelay1 = 50;  // the debounce time; increase if the output flickers
-unsigned long debounceDelay2 = 50;  // the debounce time; increase if the output flickers
+unsigned long lastDebounceTimes[3] = { 0, 0, 0 };
+int lastButtonStates[3] = { HIGH, HIGH, HIGH };
+const unsigned long debounceDelay = 50;  // Debounce delay in milliseconds
 
 char auth[] = "XXXXXXXXXXXXXXXXXXXXXXXXXXX";  //Enter your Authentication Token
 // Define NTP properties
@@ -129,6 +115,20 @@ void setup() {
   pulseSensor.blinkOnPulse(LED_PIN);
   pulseSensor.setThreshold(THRESHOLD);
 
+  // Initialize pins
+  pinMode(button1Pin, INPUT_PULLUP);
+  pinMode(button2Pin, INPUT_PULLUP);
+  pinMode(button3Pin, INPUT_PULLUP);
+
+  pinMode(relay1Pin, OUTPUT);  // Set relay pins as outputs
+  pinMode(relay2Pin, OUTPUT);
+  pinMode(relay3Pin, OUTPUT);
+
+  // Initialize relays to OFF
+  digitalWrite(relay1Pin, LOW);
+  digitalWrite(relay2Pin, LOW);
+  digitalWrite(relay3Pin, LOW);
+
   // Check if PulseSensor is initialized
   if (pulseSensor.begin()) {
     Serial.println("PulseSensor object created successfully!");
@@ -142,54 +142,84 @@ void setup() {
   display.init();
   display.flipScreenVertically();
 
-  Blynk.begin(auth, ssid, password, "blynk-cloud.com", 8080);
   // Connect to wifi
-  pinMode(Button1, INPUT);
-  pinMode(Button2, INPUT);
-  pinMode(Button3, INPUT);
+  Blynk.begin(auth, ssid, password, "blynk-cloud.com", 8080);
 
-  Serial.println("");
   display.drawString(0, 0, "Connected to WiFi.");
   Serial.print(WiFi.localIP());
-  Serial.println("");
   display.drawString(0, 24, "Welcome!");
   display.display();
   delay(1000);
 }
 
 void loop() {
-  // Pedometer
-  if (digitalRead(Button2 == LOW)) {
-    DisplayPedometer();
+  // Debounce variables for each button
+  static int lastRelay1ButtonState = HIGH;
+  static unsigned long lastDebounceTime1 = 0;
+
+  static int lastRelay2ButtonState = HIGH;
+  static unsigned long lastDebounceTime2 = 0;
+
+  static int lastRelay3ButtonState = HIGH;
+  static unsigned long lastDebounceTime3 = 0;
+
+  // Handle Button 1 (Weather)
+  if (debounceButton(button1Pin, lastButtonStates[0], lastDebounceTimes[0])) {
+    currentMode = (currentMode == 1) ? 0 : 1;  // Toggle between Weather and Time
   }
 
-  //--------------------------------------------------------------------------//
-  // Pulse Reader
-  if (digitalRead(Button3 == LOW)) {
-    DisplayHeartBeat();
+  // Handle Button 2 (Pedometer)
+  if (debounceButton(button2Pin, lastButtonStates[1], lastDebounceTimes[1])) {
+    currentMode = (currentMode == 2) ? 0 : 2;  // Toggle between Pedometer and Time
   }
 
-  //--------------------------------------------------------------------------//
-  // Weather
-  if (digitalRead(Button1 == LOW)) {
-    Serial.print("Button pressed");
-    GetWeatherData();
-    tellTime();
-    delay(6000);
-  } else {
-    display.clear();
+  // Handle Button 3 (Pulse Reader)
+  if (debounceButton(button3Pin, lastButtonStates[2], lastDebounceTimes[2])) {
+    currentMode = (currentMode == 3) ? 0 : 3;  // Toggle between Pulse Reader and Time
+  }
+
+  switch (currentMode) {
+    case 0:
+      tellTime();
+      break;
+    case 1:
+      Serial.print("Button 1 pressed");
+      GetWeatherData();
+      break;
+    case 2:
+      Serial.print("Button 2 pressed");
+      DisplayPedometer();
+      break;
+    case 3:
+      Serial.print("Button 3 pressed");
+      DisplayHeartBeat();
+      break;
   }
 
   Blynk.run();
   timer.run();
   ControlRelays();
-
   display.display();
+}
+
+bool debounceButton(int buttonPin, int& lastButtonState, unsigned long& lastDebounceTime) {
+  int currentButtonState = digitalRead(buttonPin);
+
+  if (currentButtonState != lastButtonState) {
+    lastDebounceTime = millis();  // Reset debounce timer
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay && currentButtonState == LOW && lastButtonState == HIGH) {
+    lastButtonState = currentButtonState;  // Update state
+    return true;                           // Button press detected
+  }
+
+  lastButtonState = currentButtonState;  // Update state
+  return false;                          // No button press detected
 }
 
 //Setup pedometer
 void SetupPedometer() {
-  //Call .beginCore() to configure the IMU
   if (myIMU.beginCore() != 0) {
     Serial.print("Error at beginCore().\n");
   } else {
@@ -275,8 +305,9 @@ void DisplayHeartBeat() {
 
 void ControlRelays() {
   // read the state of the switch into a local variable:
-  int reading1 = digitalRead(Relay1ButtonState);
-  int reading2 = digitalRead(Relay2ButtonState);
+  int reading1 = digitalRead(button1Pin);
+  int reading2 = digitalRead(button2Pin);
+  int reading3 = digitalRead(button3Pin);
 
   if (reading1 == LOW || reading2 == LOW) {  // Tell the state of the Lights
     display.drawRect(0, 20, 60, 40);
@@ -285,17 +316,17 @@ void ControlRelays() {
     display.drawString(17, 3, "Lights");
     display.drawString(84, 3, "A/C");
 
-    if (Relay1State == HIGH) {
+    if (relay1State == HIGH) {
       display.setFont(ArialMT_Plain_16);
       display.drawString(18, 30, "ON");
-    } else if (Relay1State == LOW) {
+    } else if (relay1State == LOW) {
       display.setFont(ArialMT_Plain_16);
       display.drawString(15, 30, "OFF");
     }
-    if (Relay2State == HIGH) {
+    if (relay2State == HIGH) {
       display.setFont(ArialMT_Plain_16);
       display.drawString(78, 30, "ON");
-    } else if (Relay2State == LOW) {
+    } else if (relay2State == LOW) {
       display.setFont(ArialMT_Plain_16);
       display.drawString(76, 30, "OFF");
     }
@@ -303,49 +334,69 @@ void ControlRelays() {
   // check to see if you just pressed the button
 
   // If the switch changed, due to noise or pressing:
-  if (reading1 != lastButtonState1) {
+  if (reading1 != lastButtonStates[0]) {
     // reset the debouncing timer
-    lastDebounceTime1 = millis();
+    lastDebounceTimes[0] = millis();
   }
-  if (reading2 != lastButtonState2) {
+  if (reading2 != lastButtonStates[1]) {
     // reset the debouncing timer
-    lastDebounceTime2 = millis();
+    lastDebounceTimes[1] = millis();
+  }
+  if (reading3 != lastButtonStates[2]) {
+    // reset the debouncing timer
+    lastDebounceTimes[2] = millis();
   }
 
-  if ((millis() - lastDebounceTime1) > debounceDelay1) {
+  if ((millis() - lastDebounceTimes[0]) > debounceDelay) {
     // whatever the reading is at, it's been there for longer than the debounce
     // delay, so take it as the actual current state:
 
     // if the button state has changed:
-    if (reading1 != Relay1ButtonState) {
-      Relay1ButtonState = reading1;
+    if (reading1 != relay1ButtonState) {
+      relay1ButtonState = reading1;
 
       // only toggle the LED if the new button state is HIGH
-      if (Relay1ButtonState == HIGH) {
-        Relay1State = !Relay1State;
+      if (relay1ButtonState == HIGH) {
+        relay1State = !relay1State;
       }
     }
   }
-  if ((millis() - lastDebounceTime2) > debounceDelay2) {
+  if ((millis() - lastDebounceTimes[1]) > debounceDelay) {
     // whatever the reading is at, it's been there for longer than the debounce
     // delay, so take it as the actual current state:
 
     // if the button state has changed:
-    if (reading2 != Relay2ButtonState) {
-      Relay2ButtonState = reading2;
+    if (reading2 != relay2ButtonState) {
+      relay2ButtonState = reading2;
 
       // only toggle the LED if the new button state is HIGH
-      if (Relay2ButtonState == HIGH) {
-        Relay2State = !Relay2State;
+      if (relay2ButtonState == HIGH) {
+        relay2State = !relay2State;
+      }
+    }
+  }
+  if ((millis() - lastDebounceTimes[2]) > debounceDelay) {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (reading3 != relay3ButtonState) {
+      relay3ButtonState = reading3;
+
+      // only toggle the LED if the new button state is HIGH
+      if (relay3ButtonState == HIGH) {
+        relay3State = !relay3State;
       }
     }
   }
   // set the LED:
-  bridge1.digitalWrite(Relay1Pin, Relay1State);
-  bridge1.digitalWrite(Relay2Pin, Relay2State);
+  bridge1.digitalWrite(relay1Pin, relay1State);
+  bridge1.digitalWrite(relay2Pin, relay2State);
+  bridge1.digitalWrite(relay3Pin, relay3State);
   // save the reading. Next time through the loop, it'll be the lastButtonState:
-  lastButtonState1 = reading1;
-  lastButtonState2 = reading2;
+  lastButtonStates[0] = reading1;
+  lastButtonStates[1] = reading2;
+  lastButtonStates[2] = reading3;
 }
 
 
@@ -365,7 +416,7 @@ void tellTime() {
 
     // Then convert the UTC UNIX timestamp to local time
     TimeChangeRule usMDT = { "MDT", Second, Sun, Mar, 2, -360 };  // UTC-6 hours
-    TimeChangeRule usMST = { "MST", First, Sun, Nov, 2, -420 };  // UTC-7 hours
+    TimeChangeRule usMST = { "MST", First, Sun, Nov, 2, -420 };   // UTC-7 hours
     Timezone usMountain(usMDT, usMST);
     local = usMountain.toLocal(utc);
 
@@ -407,16 +458,27 @@ void tellTime() {
     display.drawString(100, 0, tempC);   // Replace with "temp" to get temperaute in Farenheit
     display.drawString(113, 0, "C");
     display.display();
-  } else  // attempt to connect to wifi again if disconnected
-  {
+  } else {
+    unsigned long timeout = millis();
     display.clear();
     display.drawString(0, 18, "Connecting to Wifi...");
     display.display();
     WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+      if (millis() - timeout > 10000) {  // 10 seconds timeout
+        display.clear();
+        display.drawString(0, 32, "Failed to connect");
+        display.display();
+        return;
+      }
+    }
+    display.clear();
     display.drawString(0, 32, "Connected.");
     display.display();
   }
 }
+
+
 void GetWeatherData() {
   const char* apiKey = "0MCI6ym3qe2E6wXZJqW7g5yqddRehDvA";  // Tomorrow.io API Key
   const String latitude = "43.825386";                      // Latitude
