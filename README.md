@@ -1,2 +1,2 @@
-### Smart Watch
-# Brigham Young University Idaho
+# Smart Watch
+### Brigham Young University Idaho
