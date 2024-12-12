@@ -63,7 +63,7 @@ char auth[] = "52oHM469YYP-h8m-pRiJWH-sVk-RlXEV"; Authentication Token
 // Define NTP properties
 #define NTP_OFFSET 60 * 60             // In seconds
 #define NTP_INTERVAL 60 * 1000         // In miliseconds
-#define NTP_ADDRESS "ir.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
+#define NTP_ADDRESS "ir.pool.ntp.org" 
 
 // Set up the NTP UDP client
 WiFiUDP ntpUDP;
@@ -533,7 +533,7 @@ void GetWeatherData() {
     return;
   }
 
-  // Extract temperature value (assuming it's in Celsius in the response)
+  // Extract temperature value
   int tempStartIndex = response.indexOf(":", tempIndex) + 1;
   int tempEndIndex = response.indexOf(",", tempStartIndex);
 
