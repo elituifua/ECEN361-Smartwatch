@@ -59,7 +59,7 @@ unsigned long lastDebounceTimes[3] = { 0, 0, 0 };
 int lastButtonStates[3] = { HIGH, HIGH, HIGH };
 const unsigned long debounceDelay = 50;  // Debounce delay in milliseconds
 
-char auth[] = "XXXXXXXXXXXXXXXXXXXXXXXXXXX";  //Enter your Authentication Token
+char auth[] = "52oHM469YYP-h8m-pRiJWH-sVk-RlXEV"; Authentication Token
 // Define NTP properties
 #define NTP_OFFSET 60 * 60             // In seconds
 #define NTP_INTERVAL 60 * 1000         // In miliseconds
@@ -102,7 +102,7 @@ WidgetBridge bridge1(V1);  // Connect the Relay module
 
 BLYNK_CONNECTED() {
   // Place the AuthToken of the second hardware here
-  bridge1.setAuthToken("XXXXXXXXXXXXXXXXXXXXXXXXXXXXX");  // Enter the Auth token of the relay module(Other Esp8266 Module);
+  bridge1.setAuthToken("52oHM469YYP-h8m-pRiJWH-sVk-RlXEV");
 }
 
 
